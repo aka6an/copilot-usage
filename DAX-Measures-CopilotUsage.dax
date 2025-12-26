@@ -1,0 +1,502 @@
+// ============================================================
+// DAX Measures for Copilot Usage Dashboard
+// ============================================================
+// Copy and paste these measures into Power BI
+// Right-click on CopilotUsage table > New Measure
+// ============================================================
+
+
+// ============================================================
+// CORE METRICS
+// ============================================================
+
+Total Interactions = 
+COUNTROWS('CopilotUsage')
+
+---
+
+Unique Users = 
+DISTINCTCOUNT('CopilotUsage'[UserPrincipalName])
+
+---
+
+Licensed Interactions = 
+CALCULATE(
+    COUNTROWS('CopilotUsage'),
+    'CopilotUsage'[IsCopilotLicensed] = TRUE
+)
+
+---
+
+Unlicensed Interactions = 
+CALCULATE(
+    COUNTROWS('CopilotUsage'),
+    'CopilotUsage'[IsCopilotLicensed] = FALSE
+)
+
+---
+
+Licensed Users = 
+CALCULATE(
+    DISTINCTCOUNT('CopilotUsage'[UserPrincipalName]),
+    'CopilotUsage'[IsCopilotLicensed] = TRUE
+)
+
+---
+
+Unlicensed Users = 
+CALCULATE(
+    DISTINCTCOUNT('CopilotUsage'[UserPrincipalName]),
+    'CopilotUsage'[IsCopilotLicensed] = FALSE
+)
+
+---
+
+% Licensed Interactions = 
+DIVIDE([Licensed Interactions], [Total Interactions], 0)
+
+---
+
+% Unlicensed Interactions = 
+DIVIDE([Unlicensed Interactions], [Total Interactions], 0)
+
+---
+
+% Licensed Users = 
+DIVIDE([Licensed Users], [Unique Users], 0)
+
+
+// ============================================================
+// USAGE INTENSITY METRICS
+// ============================================================
+
+Avg Interactions Per User = 
+DIVIDE([Total Interactions], [Unique Users], 0)
+
+---
+
+Avg Interactions Per Licensed User = 
+DIVIDE([Licensed Interactions], [Licensed Users], 0)
+
+---
+
+Avg Interactions Per Unlicensed User = 
+DIVIDE([Unlicensed Interactions], [Unlicensed Users], 0)
+
+---
+
+Daily Avg Interactions = 
+AVERAGEX(
+    VALUES('DateTable'[Date]),
+    CALCULATE(COUNTROWS('CopilotUsage'))
+)
+
+---
+
+Max Daily Interactions = 
+MAXX(
+    VALUES('DateTable'[Date]),
+    CALCULATE(COUNTROWS('CopilotUsage'))
+)
+
+---
+
+Min Daily Interactions = 
+MINX(
+    FILTER(
+        VALUES('DateTable'[Date]),
+        CALCULATE(COUNTROWS('CopilotUsage')) > 0
+    ),
+    CALCULATE(COUNTROWS('CopilotUsage'))
+)
+
+
+// ============================================================
+// TREND METRICS
+// ============================================================
+
+Interactions Previous Period = 
+CALCULATE(
+    [Total Interactions],
+    DATEADD('DateTable'[Date], -1, MONTH)
+)
+
+---
+
+MoM Change = 
+VAR CurrentPeriod = [Total Interactions]
+VAR PreviousPeriod = [Interactions Previous Period]
+RETURN
+    DIVIDE(CurrentPeriod - PreviousPeriod, PreviousPeriod, 0)
+
+---
+
+MoM Change % = 
+VAR Change = [MoM Change]
+RETURN
+    IF(
+        ISBLANK(Change),
+        BLANK(),
+        FORMAT(Change, "+0.0%;-0.0%;0.0%")
+    )
+
+---
+
+MoM Change Display = 
+VAR Change = [MoM Change]
+RETURN
+    IF(
+        Change > 0,
+        "▲ " & FORMAT(Change, "0.0%"),
+        IF(
+            Change < 0,
+            "▼ " & FORMAT(ABS(Change), "0.0%"),
+            "→ 0.0%"
+        )
+    )
+
+---
+
+7-Day Rolling Avg = 
+AVERAGEX(
+    DATESINPERIOD('DateTable'[Date], MAX('DateTable'[Date]), -7, DAY),
+    CALCULATE(COUNTROWS('CopilotUsage'))
+)
+
+---
+
+30-Day Rolling Avg = 
+AVERAGEX(
+    DATESINPERIOD('DateTable'[Date], MAX('DateTable'[Date]), -30, DAY),
+    CALCULATE(COUNTROWS('CopilotUsage'))
+)
+
+---
+
+WoW Growth = 
+VAR CurrentWeekEnd = MAX('DateTable'[Date])
+VAR CurrentWeekStart = CurrentWeekEnd - 6
+VAR PreviousWeekEnd = CurrentWeekStart - 1
+VAR PreviousWeekStart = PreviousWeekEnd - 6
+
+VAR CurrentWeek = 
+    CALCULATE(
+        [Total Interactions],
+        DATESBETWEEN('DateTable'[Date], CurrentWeekStart, CurrentWeekEnd)
+    )
+VAR PreviousWeek = 
+    CALCULATE(
+        [Total Interactions],
+        DATESBETWEEN('DateTable'[Date], PreviousWeekStart, PreviousWeekEnd)
+    )
+RETURN
+    DIVIDE(CurrentWeek - PreviousWeek, PreviousWeek, 0)
+
+---
+
+Users Previous Period = 
+CALCULATE(
+    [Unique Users],
+    DATEADD('DateTable'[Date], -1, MONTH)
+)
+
+---
+
+New Users This Period = 
+VAR CurrentPeriodUsers = VALUES('CopilotUsage'[UserPrincipalName])
+VAR PreviousPeriodUsers = 
+    CALCULATETABLE(
+        VALUES('CopilotUsage'[UserPrincipalName]),
+        DATEADD('DateTable'[Date], -1, MONTH)
+    )
+RETURN
+    COUNTROWS(
+        EXCEPT(CurrentPeriodUsers, PreviousPeriodUsers)
+    )
+
+
+// ============================================================
+// APPLICATION METRICS
+// ============================================================
+
+Top Application = 
+VAR TopApp = 
+    TOPN(
+        1,
+        SUMMARIZE(
+            'CopilotUsage',
+            'CopilotUsage'[AppHost],
+            "Count", COUNTROWS('CopilotUsage')
+        ),
+        [Count],
+        DESC
+    )
+RETURN
+    MAXX(TopApp, 'CopilotUsage'[AppHost])
+
+---
+
+Application Count = 
+DISTINCTCOUNT('CopilotUsage'[AppHost])
+
+---
+
+Word Interactions = 
+CALCULATE(
+    COUNTROWS('CopilotUsage'),
+    'CopilotUsage'[AppHost] = "Word"
+)
+
+---
+
+Teams Interactions = 
+CALCULATE(
+    COUNTROWS('CopilotUsage'),
+    'CopilotUsage'[AppHost] = "Teams"
+)
+
+---
+
+Excel Interactions = 
+CALCULATE(
+    COUNTROWS('CopilotUsage'),
+    'CopilotUsage'[AppHost] = "Excel"
+)
+
+---
+
+PowerPoint Interactions = 
+CALCULATE(
+    COUNTROWS('CopilotUsage'),
+    'CopilotUsage'[AppHost] = "PowerPoint"
+)
+
+
+// ============================================================
+// DEPARTMENT METRICS
+// ============================================================
+
+Top Department = 
+VAR TopDept = 
+    TOPN(
+        1,
+        SUMMARIZE(
+            'CopilotUsage',
+            'CopilotUsage'[Department],
+            "Count", COUNTROWS('CopilotUsage')
+        ),
+        [Count],
+        DESC
+    )
+RETURN
+    MAXX(TopDept, 'CopilotUsage'[Department])
+
+---
+
+Department Count = 
+DISTINCTCOUNT('CopilotUsage'[Department])
+
+---
+
+Department User Count = 
+CALCULATE(
+    DISTINCTCOUNT('CopilotUsage'[UserPrincipalName]),
+    ALLEXCEPT('CopilotUsage', 'CopilotUsage'[Department])
+)
+
+---
+
+Department Adoption Rate = 
+VAR UsersInDept = DISTINCTCOUNT('CopilotUsage'[UserPrincipalName])
+VAR TotalUsers = 
+    CALCULATE(
+        DISTINCTCOUNT('CopilotUsage'[UserPrincipalName]), 
+        ALL('CopilotUsage'[Department])
+    )
+RETURN
+    DIVIDE(UsersInDept, TotalUsers, 0)
+
+
+// ============================================================
+// LICENSE OPTIMIZATION METRICS
+// ============================================================
+
+License Monthly Cost = 30
+// Adjust this value to match your per-user Copilot license cost
+
+---
+
+Unlicensed High Usage Users = 
+VAR AvgInteractions = [Avg Interactions Per User]
+VAR UnlicensedHighUsers = 
+    CALCULATETABLE(
+        FILTER(
+            SUMMARIZE(
+                'CopilotUsage',
+                'CopilotUsage'[UserPrincipalName],
+                "UserInteractions", COUNTROWS('CopilotUsage')
+            ),
+            [UserInteractions] >= AvgInteractions
+        ),
+        'CopilotUsage'[IsCopilotLicensed] = FALSE
+    )
+RETURN
+    COUNTROWS(UnlicensedHighUsers)
+
+---
+
+Licensed Low Usage Users = 
+VAR LowUsageThreshold = 5
+VAR LicensedLowUsers = 
+    CALCULATETABLE(
+        FILTER(
+            SUMMARIZE(
+                'CopilotUsage',
+                'CopilotUsage'[UserPrincipalName],
+                "UserInteractions", COUNTROWS('CopilotUsage')
+            ),
+            [UserInteractions] < LowUsageThreshold
+        ),
+        'CopilotUsage'[IsCopilotLicensed] = TRUE
+    )
+RETURN
+    COUNTROWS(LicensedLowUsers)
+
+---
+
+Licensed Zero Usage Users = 
+// Note: This requires a separate Licensed Users table to work properly
+// This measure shows users with very low activity
+CALCULATE(
+    DISTINCTCOUNT('CopilotUsage'[UserPrincipalName]),
+    'CopilotUsage'[IsCopilotLicensed] = TRUE,
+    FILTER(
+        VALUES('CopilotUsage'[UserPrincipalName]),
+        CALCULATE(COUNTROWS('CopilotUsage')) <= 1
+    )
+)
+
+---
+
+Potential Monthly Savings = 
+[Licensed Low Usage Users] * [License Monthly Cost]
+
+---
+
+Potential License Candidates = 
+[Unlicensed High Usage Users]
+
+---
+
+ROI Per Licensed User = 
+DIVIDE([Licensed Interactions], [Licensed Users], 0)
+
+
+// ============================================================
+// TIME-BASED METRICS
+// ============================================================
+
+Peak Hour = 
+VAR HourlyCounts = 
+    ADDCOLUMNS(
+        SUMMARIZE('CopilotUsage', 'CopilotUsage'[Hour]),
+        "Count", CALCULATE(COUNTROWS('CopilotUsage'))
+    )
+VAR MaxCount = MAXX(HourlyCounts, [Count])
+RETURN
+    MAXX(
+        FILTER(HourlyCounts, [Count] = MaxCount),
+        'CopilotUsage'[Hour]
+    )
+
+---
+
+Peak Hour Display = 
+VAR PeakHr = [Peak Hour]
+RETURN
+    IF(
+        PeakHr < 12,
+        FORMAT(PeakHr, "0") & " AM",
+        IF(
+            PeakHr = 12,
+            "12 PM",
+            FORMAT(PeakHr - 12, "0") & " PM"
+        )
+    )
+
+---
+
+Weekday Interactions = 
+CALCULATE(
+    COUNTROWS('CopilotUsage'),
+    'DateTable'[IsWeekday] = TRUE
+)
+
+---
+
+Weekend Interactions = 
+CALCULATE(
+    COUNTROWS('CopilotUsage'),
+    'DateTable'[IsWeekend] = TRUE
+)
+
+---
+
+% Weekday Usage = 
+DIVIDE([Weekday Interactions], [Total Interactions], 0)
+
+---
+
+Last 7 Days Interactions = 
+CALCULATE(
+    COUNTROWS('CopilotUsage'),
+    'DateTable'[IsLast7Days] = TRUE
+)
+
+---
+
+Last 30 Days Interactions = 
+CALCULATE(
+    COUNTROWS('CopilotUsage'),
+    'DateTable'[IsLast30Days] = TRUE
+)
+
+
+// ============================================================
+// DISPLAY / FORMATTING MEASURES
+// ============================================================
+
+Last Refresh Date = 
+FORMAT(NOW(), "MMM DD, YYYY h:mm AM/PM")
+
+---
+
+Date Range Display = 
+VAR MinDate = MIN('DateTable'[Date])
+VAR MaxDate = MAX('DateTable'[Date])
+RETURN
+    FORMAT(MinDate, "MMM DD, YYYY") & " - " & FORMAT(MaxDate, "MMM DD, YYYY")
+
+---
+
+Interactions KPI Color = 
+VAR Growth = [MoM Change]
+RETURN
+    IF(Growth > 0, "#107C10",     // Green for growth
+    IF(Growth < 0, "#D83B01",     // Red for decline
+    "#FFB900"))                    // Amber for neutral
+
+---
+
+Total Interactions Formatted = 
+VAR Value = [Total Interactions]
+RETURN
+    IF(
+        Value >= 1000000,
+        FORMAT(Value / 1000000, "#.#") & "M",
+        IF(
+            Value >= 1000,
+            FORMAT(Value / 1000, "#.#") & "K",
+            FORMAT(Value, "#,##0")
+        )
+    )
